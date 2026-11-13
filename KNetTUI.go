@@ -40,8 +40,8 @@ type InterfaceKNetTUI interface {
 //region^ KNetTUI's Settings
 
 type KNTSettings struct {
-	Journal KJournal.KJSettings
-	API     KNet.KNSettings
+	Journal KJournal.KJSettings `json:"Journal"`
+	API     KNet.KNSettings     `json:"API"`
 }
 
 // desc: Validates settings

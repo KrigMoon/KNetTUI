@@ -1,58 +1,58 @@
 # KNetTUI
 
-The package provides a terminal user interface (TUI) for a KNet node: a console with the journal, panels for peers, metrics and node, and a command input line. The package encapsulates the application lifecycle, background processes for reading the journal and responses, execution of external programs, and screen rendering. Interaction with the KNet core goes through the `Commands.InterfaceKNet` and `Commands.InterfaceKNetCore` interfaces. Custom logic is plugged in via the `AppLogic` callback. Journal and API settings are passed as a single `KNTSettings` object.
+Пакет предоставляет терминальный интерфейс (TUI) для узла KNet: консоль с журналом, панели пиров, метрик и узла, а также строку ввода команд. Пакет инкапсулирует жизненный цикл приложения, фоновые процессы чтения журнала и ответов, выполнение внешних программ и отрисовку экранов. Взаимодействие с ядром KNet идёт через интерфейсы `Commands.InterfaceKNet` и `Commands.InterfaceKNetCore`. Пользовательская логика подключается через колбэк `AppLogic`. Настройки журнала и API передаются одним объектом `KNTSettings`.
 
-## Settings
+## Настройки
 
-The module requires a set of data describing the journal and the core API to start.
+Модуль требует для запуска набор данных, описывающий журнал и API ядра.
 
-| Name | Type | Default | Description |
+| Название | Тип | По умолчанию | Описание |
 |---|---|---|---|
-| `Journal` | `KJournal.KJSettings` | — | Journal settings: writers, readers, buffers |
-| `API` | `KNet.KNSettings` | — | KNet core settings: node, peers, commands, journal |
+| `Journal` | `KJournal.KJSettings` | — | Настройки журнала: писатели, читатели, буферы |
+| `API` | `KNet.KNSettings` | — | Настройки ядра KNet: узел, пиры, команды, журнал |
 
-`KNTSettings` is validated by the `validate` method before startup; on error `Run` returns it and does not start.
+`KNTSettings` валидируется методом `validate` перед запуском; при ошибке `Run` возвращает её и не стартует.
 
-## Lifecycle
+## Жизненный цикл
 
-### Start
+### Запуск
 
-Start is performed by the `Run` method. First it checks that `status` equals `OFF`, otherwise it returns an error. Then settings are validated, the journal is initialized, a writer and the `tuiJournal` reader are created, the design is set up and TUI processes are started. After one second, in a separate goroutine, the KNet core starts, along with its processes (`readerResponse`, `executerPrograms`, `readerPackages`, `updPeers`, `updMetrics`), and `appWorkstation` is called with the interfaces and the API context. The main thread blocks on `app.Run()`. The status goes through `RUNNING` → `ON`.
+Запуск выполняется методом `Run`. Сначала проверяется, что `status` равен `OFF`, иначе возвращается ошибка. Затем валидируются настройки, создаётся дизайн, после чего инициализируется журнал: создаётся писатель и читатель `tuiJournal`, запускается `readerRecords`. Через секунду в отдельной горутине стартует ядро KNet, его процессы (`readerResponse`, `executerPrograms`, `readerPackages`, `updPeers`, `updMetrics`) и вызывается `appWorkstation` с интерфейсами и контекстом API. Основной поток блокируется на `app.Run()`. Статус последовательно проходит `RUNNING` → `ON`.
 
-### Stop
+### Остановка
 
-Stop is performed by the `stop` method, which is triggered by `Esc`. The logic is guarded by two `once` values (`stopOnce`, `stopTwice`) and a `WaitGroup` (`awaitStopOnce`) to correctly handle a repeated call. The first call cancels `ctxAPI`, waits for `processesAPI` and calls `kn.Endwork()`. The second call waits for the first to finish, cancels `ctxTUI`, waits for `processesTUI`, closes the journal and after one second stops `app`. The status goes through `STOP` → `OFF`.
+Остановка выполняется методом `stop`, который вызывается по `Esc`, причём для полной остановки требуется нажать `Esc` дважды. Логика защищена двумя `once` (`stopOnce`, `stopTwice`) и `WaitGroup` (`awaitStopOnce`), чтобы корректно обработать повторный вызов. Первый вызов отменяет `ctxAPI`, ждёт `processesAPI` и вызывает `kn.Endwork()`. Второй вызов ждёт завершения первого, отменяет `ctxTUI`, ждёт `processesTUI`, закрывает журнал и через секунду останавливает `app`. Статус проходит `STOP` → `OFF`.
 
-## Interaction
+## Взаимодействие
 
-### Adding a page
+### Добавление страницы
 
-The `AddPage` method adds a page to `tview.Pages` and binds a hotkey. The handler is stored in `inputHandlers` under the page key. The page is added via `QueueUpdateDraw`, while the handler is written outside of it. On a key press, `SetInputCapture` iterates over the handlers and switches the page. The method is safe when `app` or `pages` is `nil` — it simply returns. Removal is performed by the `DelPage` method, which deletes the handler and the page.
+Метод `AddPage` добавляет страницу в `tview.Pages` и привязывает горячую клавишу. Обработчик сохраняется в `inputHandlers` под ключом страницы. Добавление страницы выполняется через `QueueUpdateDraw`, а запись обработчика — вне его. При нажатии клавиши `SetInputCapture` перебирает обработчики и переключает страницу. Метод безопасен при `nil` в `app` или `pages` — просто возвращает управление. Удаление выполняется методом `DelPage`, который удаляет обработчик и страницу.
 
-### Printing to console
+### Печать в консоль
 
-The `PrintConsole` method writes a line to `console` and scrolls to the end. Writing is done via `QueueUpdateDraw`, so the method is thread-safe. Line formatting is handled by the `coloredRecord`, `coloredResponse`, `coloredPackage`, `ColoredText`, `LevelText`, `CropText`, `ChanText` helpers. Colors are defined as constants of type `Color`. Printing is used by the journal, response and package reader processes.
+Метод `PrintConsole` пишет строку в `console` и прокручивает в конец. Запись выполняется через `QueueUpdateDraw`, поэтому метод потокобезопасен. Форматирование строк выполняют хелперы `coloredRecord`, `coloredResponse`, `coloredPackage`, `ColoredText`, `LevelText`, `CropText`, `ChanText`. Цвета заданы константами типа `Color`. Печать используется процессами чтения журнала, ответов и пакетов.
 
-### Executing commands
+### Выполнение команд
 
-Commands are entered in the `input` line and passed to `kn.Execute` on `Enter`. The `CommandsMap` is extended by the `setTUICommands` method, which registers `/clear`. External programs are executed by `executerPrograms`: on cursor change it takes `knt.kn.ExternalPrograms()`, finds the container in `CommandsMap` for each, calls `Check` and `Body`, and writes the response via `WriteResponse`. Hotkey handlers are stored in `inputHandlers` and invoked in `SetInputCapture`.
+Команды вводятся в строке `input` и по `Enter` передаются в `kn.Execute`. Карта команд `CommandsMap` дополняется методом `setTUICommands`, который регистрирует `/clear`. Внешние программы выполняет `executerPrograms`: при смене курсора он берёт `knt.kn.ExternalPrograms()`, для каждой находит контейнер в `CommandsMap`, вызывает `Check`, и только если проверка вернула `true` — `Body`. Полученный ответ пишется через `WriteResponse`. Обработчики горячих клавиш хранятся в `inputHandlers` и вызываются в `SetInputCapture`.
 
-### Updating panels
+### Обновление панелей
 
-Panels are updated by background processes. `updPeers` polls `GetPeerList` on a 200 ms ticker and updates `peers` via `QueueUpdateDraw`. `updMetrics` collects journal, KNet and KNetCore metrics on a 400 ms ticker and updates `metrics`. `updNode` is called once at API startup and fills `node` directly, without `QueueUpdateDraw`. `readerRecords` reads the journal and prints records, `readerResponse` — responses, `readerPackages` — packages.
+Панели обновляются фоновыми процессами. `updPeers` по тикеру 200 мс запрашивает `GetPeerList` и обновляет `peers` через `QueueUpdateDraw`. `updMetrics` по тикеру 400 мс собирает метрики журнала, KNet и KNetCore и обновляет `metrics`. `updNode` вызывается один раз при старте API и заполняет `node` напрямую, без `QueueUpdateDraw`. `readerRecords` читает журнал и печатает записи, `readerResponse` — ответы, `readerPackages` — пакеты.
 
-## Example
+## Пример
 
 ```go
 commands := make(map[string]Commands.CommandContainer)
 knt := KNetTUI.NewKNetTUI(commands)
 
-settings := KNTSettings{
+settings := KNetTUI.KNTSettings{
     Journal: KJournal.KJSettings{ /* ... */ },
     API:     KNet.KNSettings{ /* ... */ },
 }
 
-workstation := func(i Interface, ctx context.Context, wg *sync.WaitGroup) {
+workstation := func(i KNetTUI.Interface, ctx context.Context, wg *sync.WaitGroup) {
     i.KNetTUI.PrintConsole("custom logic started")
 }
 
@@ -60,7 +60,3 @@ if err := knt.Run(settings, workstation); err != nil {
     log.Fatal(err)
 }
 ```
-
----
-
- - This documentation is also available in [Russian](./src/docs/README.ru.md).
